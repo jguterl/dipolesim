@@ -1,0 +1,246 @@
+
+nout = 50           # Number of output timesteps
+timestep = 95788        # 95788 = 1ms in normalised units
+
+MZ = 1
+
+# Temperature normalization (eV)
+tnorm_setting = 10
+
+peak_te = 150 / tnorm_setting   # eV
+peak_ti = 150 / tnorm_setting   # eV
+peak_ne = 1e19 / hermes:Nnorm    # Nm-3
+core_ne = 1e18 / hermes:Nnorm    # Nm-3
+core_te = 10 / tnorm_setting   # eV
+core_ti = 10 / tnorm_setting   # eV
+# 'x' is a radial coordinate from 0 (inner) to 1 (outer)
+initial_te = peak_te * 0.5
+initial_ti = peak_ti * 0.5
+initial_ne = peak_ne * 0.5
+
+# Derived quantities
+initial_pe = initial_te * initial_ne
+initial_pi = initial_ti * initial_ne
+
+core_pi = core_ne * core_ti
+core_pe = core_ne * core_te
+peak_pi = peak_ne * peak_ti
+peak_pe = peak_ne * peak_te
+[input]
+error_on_unused_options = false    # Prevents crash from unused/misspelled inputs
+
+[mesh]
+file = "bout.full_dipole.32x24.fcfs.peak.grd.nc"
+
+[mesh:paralleltransform]
+type = identity
+
+[solver]
+diagnose = true       # Print and save solver diagnostics
+type = snes
+
+snes_type = newtonls  # Nonlinear solver
+ksp_type = fgmres     # Linear solver
+pc_type = lu          # Preconditioner
+; pc_type = hypre               # Preconditioner type
+; pc_hypre_type = euclid        # Hypre preconditioner type
+max_nonlinear_iterations = 25
+atol = 1e-8          # Absolute tolerance
+rtol = 1e-8           # Relative tolerance
+stol = 1e-5          # Step size tolerance
+maxf = 2000
+maxl = 20             # Maximum linear iterations per nonlinear step
+matrix_free_operator = true   # Use full operator in linear iterations
+lag_jacobian = 5      # Nonlinear iterations between Jacobian recalculations
+timestep = 0.003      # Initial timestep
+
+pid_controller = true # Use PID controller to adjust timestep
+target_its = 4        # Target number of nonlinear iterations
+kP = 0.65             # PID proportional coefficient
+kI = 0.3              # PID integral coefficient
+kD = 0.15             # PID derivative coefficient 
+
+[petsc]
+pc_factor_mat_solver_type = strumpack
+mat_strumpack_reordering = metis
+mat_strumpack_colperm = true
+pc_factor_shift_type = NONZERO
+pc_factor_shift_amount = 1e-12
+
+[hermes]
+components = (d+, e, , braginskii_collisions, braginskii_friction,
+              braginskii_heat_exchange, electron_force_balance,
+              braginskii_conduction)
+
+Nnorm = 1e17  # Reference density [m^-3]
+Bnorm = 1   # Reference magnetic field [T]
+Tnorm = tnorm_setting   # Reference temperature [eV]
+
+[braginskii_collisions]
+diagnose = true
+electron_electron = true
+ion_ion = true
+electron_ion = true
+electron_neutral = false
+ion_neutral = false
+neutral_neutral = false
+
+################################################################
+# Ions
+
+[d+]
+type = evolve_density, evolve_momentum, evolve_pressure, anomalous_diffusion
+
+AA = 2
+charge = 1
+
+thermal_conduction = true
+kappa_limit_alpha = -1 # No flux limiter for ions
+conduction_collisions_mode = braginskii
+
+#recycle_as = d
+#target_recycle = true
+#target_recycle_multiplier = 1
+#target_recycle_energy = 3.5
+
+#sol_recycle = true           # Recycling ions -> neutrals at outer wall
+#sol_recycle_multiplier = 0.9
+#sol_recycle_energy = 3.5
+
+#pfr_recycle = true
+#pfr_recycle_multiplier = 1
+#pfr_recycle_energy = 3.5
+
+#target_fast_recycle_energy_factor = 0.48
+#target_fast_recycle_fraction = 0.80
+
+# Anomalous transport coefficients.
+# These can be analytic functions or arrays in the mesh file
+anomalous_D = 1.0     # Particle diffusion  [m^2/s]
+anomalous_chi = 0.5   # Ion thermal diffusion [m^2/s]
+anomalous_nu = 0.2    # Ion kinetic viscosity [m^2/s]
+
+diagnose = true
+
+[Nd+]
+
+function = initial_ne
+bndry_xin = dirichlet(core_ne)
+bndry_xout = dirichlet(peak_ne)
+#bndry_sol = dirichlet(peak_ne) # Normalized length scale (rho_s0)
+#bndry_pf = decaylength(30)  # Normalized length scale (rho_s0)
+#bndry_all = dirichlet(peak_ne)  # Other boundaries neumann
+
+[Pd+]
+
+function = initial_pi
+bndry_xin = dirichlet(core_pi) # Now there is a source
+bndry_xout = dirichlet(peak_pi)
+#bndry_sol = dirichlet(sol_pi)
+#bndry_pf = decaylength(30)
+#bndry_all = dirichlet(peak_pi)  # Other boundaries neumann
+
+################################################################
+# Neutrals
+
+#[d]
+#type = neutral_mixed, neutral_boundary
+
+#AA = 2
+#flux_limit = true
+#maximum_mfp = 1.0
+#perp_pressure_form = 1   # 5/3 factor
+#heat_flux_limit_alpha = 0.25
+#upwind_perp_diffusion = true
+
+#diagnose = true
+#diagnose_eqns = true
+
+#nn_floor = 1e-8
+#pn_floor = 1e-8
+#perp_operator = 2
+
+#diffusion_collisions_mode = afn
+
+#neutral_boundary_sol = true
+#neutral_boundary_pfr = true
+#neutral_boundary_upper_y = true
+#neutral_boundary_lower_y = true
+
+#target_energy_refl_factor = 0.70
+#sol_energy_refl_factor = 0.67
+#pfr_energy_refl_factor = 0.67
+
+#target_fast_refl_fraction = 0.80
+#sol_fast_refl_fraction = 0.70
+#pfr_fast_refl_fraction = 0.70
+
+#[Pd]
+#bndry_sol = neumann  # This prevents advection of density or energy out of the SOL
+#bndry_core = free_o3  # This allows density and energy advection out of core
+#bndry_all = neumann
+
+#[Nd]
+#bndry_sol = neumann 
+#ndry_core = free_o3  # This allows density and energy advection out of core
+#bndry_all = neumann
+
+#[Td]
+#bndry_sol = neumann  
+#bndry_all = neumann
+
+#[Dnnd]
+#bndry_all = neumann
+
+#[DnnPnd]
+#bndry_all = neumann
+
+#[DnnTnd]
+#bndry_all = neumann
+
+#[DnnNnd]
+#bndry_all = neumann
+
+################################################################
+# Electrons
+
+[e]
+# Set electron density from quasineutrality,
+# and parallel flow from ion flow, assuming no currents
+type = quasineutral, evolve_pressure, zero_current, anomalous_diffusion
+
+AA = 1/1836
+charge = -1
+
+thermal_conduction = true
+kappa_limit_alpha = 0.2
+conduction_collisions_mode = braginskii
+
+anomalous_D = `d+`:anomalous_D  # Same as ions
+anomalous_chi = 0.2  # Electron thermal diffusion
+diagnose = true  # Save additional diagnostics
+
+[Pe]
+function = initial_pe
+bndry_xin = dirichlet(core_pe)
+bndry_xout = dirichlet(peak_pe)
+#bndry_sol = decaylength(30)
+#bndry_pfr = decaylength(30)
+#bndry_all = dirichlet(peak_pe)  # All other boundaries
+
+################################################################
+; [sheath_boundary_simple]
+; gamma_i = 2.5
+; gamma_e = 4.5
+
+; [recycling]
+; species = d+
+
+; [reactions]
+; diagnose = true
+
+; type = (
+;         d + e -> d+ + 2e,     # Deuterium ionisation
+;         d+ + e -> d,          # Deuterium recombination
+;         d + d+ -> d+ + d,     # Charge exchange
+;        )
